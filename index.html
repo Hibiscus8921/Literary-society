@@ -414,66 +414,132 @@
     © 2026 Cambridge Literary Society
 </footer>
 
-<script>
-    document.getElementById("joinForm").addEventListener("submit", function(event) {
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-analytics.js";
+    import { getFirestore, collection, addDoc, getDocs, updateDoc, doc, query, where, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyDpDV9kJDJo9SCf-dsUQOU9y_eyXxv-_uM",
+        authDomain: "literary-society-2f382.firebaseapp.com",
+        projectId: "literary-society-2f382",
+        storageBucket: "literary-society-2f382.firebasestorage.app",
+        messagingSenderId: "736644852738",
+        appId: "1:736644852738:web:2c9f86f9b32587b6180b1b",
+        measurementId: "G-N45QW742C8"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const analytics = getAnalytics(app);
+    const db = getFirestore(app);
+
+    async function loadPublishedWorks() {
+        const published = document.getElementById("publishedWorks");
+        try {
+            const q = query(collection(db, "submissions"), where("status", "==", "approved"));
+            const snapshot = await getDocs(q);
+            if (snapshot.empty) {
+                published.innerHTML = '<p style="color:#666; text-align:center; padding: 2rem 0; letter-spacing:1px;">AWAITING SUBMISSIONS</p>';
+                return;
+            }
+            published.innerHTML = '';
+            snapshot.forEach(docSnap => {
+                const data = docSnap.data();
+                const entry = document.createElement("div");
+                entry.classList.add("work-item");
+                entry.innerHTML =
+                    '<h3>' + data.title + '</h3>' +
+                    '<span class="meta">Category: ' + data.type + '</span>' +
+                    '<p>' + data.content.replace(/\n/g, '<br>') + '</p>';
+                published.appendChild(entry);
+            });
+        } catch(e) {
+            published.innerHTML = '<p style="color:#666; text-align:center; padding: 2rem 0; letter-spacing:1px;">AWAITING SUBMISSIONS</p>';
+        }
+    }
+
+    loadPublishedWorks();
+
+    document.getElementById("joinForm").addEventListener("submit", async function(event) {
         event.preventDefault();
+        const inputs = this.querySelectorAll('input');
+        const name = inputs[0].value;
+        const admission = inputs[1].value;
+        const cls = inputs[2].value;
+        try {
+            await addDoc(collection(db, "registrations"), {
+                name: name, admission: admission, cls: cls, timestamp: serverTimestamp()
+            });
+        } catch(e) {}
         document.getElementById("writing").style.display = "block";
         document.getElementById("writing").scrollIntoView({ behavior: 'smooth' });
     });
 
-    function submitForApproval() {
-        var title = document.getElementById("title").value;
-        var type = document.getElementById("type").value;
-        var content = document.getElementById("content").value;
+    window.submitForApproval = async function() {
+        const title = document.getElementById("title").value;
+        const type = document.getElementById("type").value;
+        const content = document.getElementById("content").value;
+        if (!title.trim() || !content.trim()) { alert("Please complete all fields."); return; }
+        try {
+            await addDoc(collection(db, "submissions"), {
+                title: title, type: type, content: content, status: "pending", timestamp: serverTimestamp()
+            });
+            document.getElementById("title").value = "";
+            document.getElementById("content").value = "";
+            alert("Submission received. Pending review.");
+        } catch(e) { alert("Error submitting. Please try again."); }
+    };
 
-        if(!title.trim() || !content.trim()) { 
-            alert("Please complete all fields."); 
-            return; 
-        }
-
-        var pendingContainer = document.getElementById("pendingWorks");
-        var entry = document.createElement("div"); 
-        entry.classList.add("work-item");
-        
-        entry.innerHTML = `
-            <h3>${title}</h3>
-            <span class="meta">Category: ${type}</span>
-            <p>${content.replace(/\n/g, '<br>')}</p>
-            <button onclick="approveWork(this)" class="btn" style="margin-top:0; padding:5px 15px; font-size:0.7rem;">Approve</button>
-        `;
-        
-        pendingContainer.appendChild(entry);
-        
-        // Clear form
-        document.getElementById("title").value = "";
-        document.getElementById("content").value = "";
-        
-        alert("Submission received. Pending review.");
-    }
-
-    function checkPassword() {
+    window.checkPassword = async function() {
         if (document.getElementById("adminPassword").value === "literary123") {
             document.getElementById("pending").style.display = "block";
             document.getElementById("loginMessage").innerText = "Access granted.";
             document.getElementById("loginMessage").style.color = "#C5A059";
+            await loadPendingWorks();
         } else {
             document.getElementById("loginMessage").innerText = "Invalid password.";
             document.getElementById("loginMessage").style.color = "#ff5555";
         }
+    };
+
+    async function loadPendingWorks() {
+        const pendingContainer = document.getElementById("pendingWorks");
+        pendingContainer.innerHTML = '';
+        try {
+            const q = query(collection(db, "submissions"), where("status", "==", "pending"));
+            const snapshot = await getDocs(q);
+            if (snapshot.empty) {
+                pendingContainer.innerHTML = '<p style="color:#666; letter-spacing:1px; padding: 1rem 0;">No pending submissions.</p>';
+                return;
+            }
+            snapshot.forEach(docSnap => {
+                const data = docSnap.data();
+                const entry = document.createElement("div");
+                entry.classList.add("work-item");
+                entry.dataset.id = docSnap.id;
+                entry.innerHTML =
+                    '<h3>' + data.title + '</h3>' +
+                    '<span class="meta">Category: ' + data.type + '</span>' +
+                    '<p>' + data.content.replace(/\n/g, '<br>') + '</p>' +
+                    '<button onclick="approveWork(this)" class="btn" style="margin-top:0; padding:5px 15px; font-size:0.7rem;">Approve</button>';
+                pendingContainer.appendChild(entry);
+            });
+        } catch(e) {
+            pendingContainer.innerHTML = '<p style="color:#ff5555; letter-spacing:1px; padding: 1rem 0;">Error loading submissions.</p>';
+        }
     }
 
-    function approveWork(button) {
-        var work = button.parentElement;
-        var published = document.getElementById("publishedWorks");
-        
-        // Clear placeholder  text if present
-        if(published.querySelector('p')) { 
-            published.innerHTML = ''; 
-        }
-        
-        button.remove(); // Remove the approve button
-        published.appendChild(work); // Move work to published section
-    }
+    window.approveWork = async function(button) {
+        const work = button.parentElement;
+        const docId = work.dataset.id;
+        try {
+            await updateDoc(doc(db, "submissions", docId), { status: "approved" });
+            const published = document.getElementById("publishedWorks");
+            if (published.querySelector('p')) { published.innerHTML = ''; }
+            button.remove();
+            published.appendChild(work);
+        } catch(e) { alert("Error approving. Please try again."); }
+    };
 </script>
 
 </body>
